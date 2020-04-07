@@ -48,9 +48,10 @@ final class {{ .Service | phpServiceName .File }}Client implements {{ .Service |
     private $streamFactory;
 
     /**
-     * @var boolean
+     * If set to true client will use JSON serialization instead of Protobuf.
+     * @var bool
      */
-    private $doProtobufRequest = true;
+    private $json = false;
 
     public function __construct(
         $addr,
@@ -77,7 +78,7 @@ final class {{ .Service | phpServiceName .File }}Client implements {{ .Service |
     }
 
     /**
-     * Returns a new client configured to do json request instead of doing protobuf request which is default and recommended.
+     * Returns a new client configured to use JSON serialization instead of Protobuf.
      */
     public static function newJson(
         $addr,
@@ -87,7 +88,7 @@ final class {{ .Service | phpServiceName .File }}Client implements {{ .Service |
     ): {{ .Service | phpServiceName .File }}Client
     {
         $client = new static($addr, $httpClient, $requestFactory, $streamFactory);
-        $client->doProtobufRequest = false;
+        $client->json = true;
 
         return $client;
     }
@@ -116,10 +117,10 @@ final class {{ .Service | phpServiceName .File }}Client implements {{ .Service |
      */
     private function doRequest(array $ctx, string $url, Message $in, Message $out): void
     {
-        if ($this->doProtobufRequest) {
-            $this->doProtobufRequest($ctx, $url, $in, $out);
-        } else {
+        if ($this->json) {
             $this->doJsonRequest($ctx, $url, $in, $out);
+        } else {
+            $this->doProtobufRequest($ctx, $url, $in, $out);
         }
     }
 
