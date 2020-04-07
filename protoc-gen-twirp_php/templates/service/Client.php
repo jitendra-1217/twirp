@@ -47,6 +47,11 @@ final class {{ .Service | phpServiceName .File }}Client implements {{ .Service |
      */
     private $streamFactory;
 
+    /**
+     * @var boolean
+     */
+    private $doProtobufRequest = true;
+
     public function __construct(
         $addr,
         ClientInterface $httpClient = null,
@@ -70,6 +75,22 @@ final class {{ .Service | phpServiceName .File }}Client implements {{ .Service |
         $this->requestFactory = $requestFactory;
         $this->streamFactory = $streamFactory;
     }
+
+    /**
+     * Returns a new client configured to do json request instead of doing protobuf request which is default and recommended.
+     */
+    public static function newJson(
+        $addr,
+        ClientInterface $httpClient = null,
+        RequestFactoryInterface $requestFactory = null,
+        StreamFactoryInterface $streamFactory = null
+    ): {{ .Service | phpServiceName .File }}Client
+    {
+        $client = new static($addr, $httpClient, $requestFactory, $streamFactory);
+        $client->doProtobufRequest = false;
+
+        return $client;
+    }
 {{ range $method := .Service.Method }}
 {{- $inputType := $method.InputType | phpMessageName }}
     /**
@@ -85,13 +106,25 @@ final class {{ .Service | phpServiceName .File }}Client implements {{ .Service |
 
         $url = $this->addr.'/twirp/{{ $method | protoFullName $.File $.Service }}';
 
-        $this->doProtobufRequest($ctx, $url, $in, $out);
+        $this->doRequest($ctx, $url, $in, $out);
 
         return $out;
     }
 {{ end }}
     /**
      * Common code to make a request to the remote twirp service.
+     */
+    private function doRequest(array $ctx, string $url, Message $in, Message $out): void
+    {
+        if ($this->doProtobufRequest) {
+            $this->doProtobufRequest($ctx, $url, $in, $out);
+        } else {
+            $this->doJsonRequest($ctx, $url, $in, $out);
+        }
+    }
+
+    /**
+     * Common code to make a request to the remote twirp service using protobuf serialization.
      */
     private function doProtobufRequest(array $ctx, string $url, Message $in, Message $out): void
     {
@@ -111,6 +144,32 @@ final class {{ .Service | phpServiceName .File }}Client implements {{ .Service |
 
         try {
             $out->mergeFromString((string)$resp->getBody());
+        } catch (GPBDecodeException $e) {
+            throw $this->clientError('failed to unmarshal proto response', $e);
+        }
+    }
+
+    /**
+     * Common code to make a request to the remote twirp service using json serialization.
+     */
+    private function doJsonRequest(array $ctx, string $url, Message $in, Message $out): void
+    {
+        $body = $in->serializeToJsonString();
+
+        $req = $this->newRequest($ctx, $url, $body, 'application/json');
+
+        try {
+            $resp = $this->httpClient->sendRequest($req);
+        } catch (\Throwable $e) {
+            throw $this->clientError('failed to send request', $e);
+        }
+
+        if ($resp->getStatusCode() !== 200) {
+            throw $this->errorFromResponse($resp);
+        }
+
+        try {
+            $out->mergeFromJsonString((string)$resp->getBody());
         } catch (GPBDecodeException $e) {
             throw $this->clientError('failed to unmarshal proto response', $e);
         }
